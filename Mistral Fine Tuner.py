@@ -51,24 +51,6 @@ def load_data_and_model(text_file, model_directory):
 
     return model, tokenizer, train_dataset
 
-class CustomSFTTrainer(SFTTrainer):
-    def __init__(self, stop_loss_value, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.stop_loss_value = stop_loss_value
-
-    def training_step(self, model, inputs):
-        outputs = super().training_step(model, inputs)
-        loss_value = outputs.loss if isinstance(outputs, dict) else outputs
-
-        print(f"Current Loss Value: {loss_value.item()}")
-
-        if loss_value and loss_value.item() <= self.stop_loss_value:
-            print(f"Loss reached {self.stop_loss_value} or below. Saving and stopping training.")
-            self.save_model()
-            self.tokenizer.save_pretrained(self.args.output_dir)
-            raise ValueError(f"Training halted due to loss reaching {self.stop_loss_value} or below")
-        return outputs
-
 def train_model(model, tokenizer, train_dataset, output_directory):
     training_args = TrainingArguments(
         output_dir=output_directory,
@@ -87,8 +69,7 @@ def train_model(model, tokenizer, train_dataset, output_directory):
         logging_dir="./logs",
     )
 
-    trainer = CustomSFTTrainer(
-        stop_loss_value=stop_loss_value,
+    trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
@@ -98,15 +79,12 @@ def train_model(model, tokenizer, train_dataset, output_directory):
         max_seq_length=2048
     )
 
-    try:
-        trainer.train()
-    except ValueError as e:
-        print(e)
+    trainer.train()
     trainer.save_model(output_directory)
     tokenizer.save_pretrained(output_directory)
 
 def adjust_training_parameters():
-    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, stop_loss_value, lora_alpha, r
+    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, lora_alpha, r
     while True:
         print("\nTraining Parameters:")
         print(f"1. Warmup Steps (Current: {warmup_steps})")
@@ -116,10 +94,9 @@ def adjust_training_parameters():
         print(f"5. Learning Rate (Current: {learning_rate})")
         print(f"6. Logging Steps (Current: {logging_steps})")
         print(f"7. Save Steps (Current: {save_steps})")
-        print(f"8. Set the loss value to stop training (Current: {stop_loss_value})")
-        print(f"9. Change Lora Alpha (Current: {lora_alpha})")
-        print(f"10. Adjust Dimension Count (Current: {r})")
-        print(f"11. Back to main menu")
+        print(f"8. Change Lora Alpha (Current: {lora_alpha})")
+        print(f"9. Adjust Dimension Count (Current: {r})")
+        print(f"10. Back to main menu")
         choice = input("Select the parameter number you want to adjust: ")
         if choice == "1":
             warmup_steps = int(input("Enter new Warmup Steps: "))
@@ -136,12 +113,10 @@ def adjust_training_parameters():
         elif choice == "7":
             save_steps = int(input("Enter new Save Steps: "))
         elif choice == "8":
-            stop_loss_value = float(input("Enter the loss value at which training should stop: "))
-        elif choice == "9":
             lora_alpha = int(input("Enter new Lora Alpha: "))
-        elif choice == "10":
+        elif choice == "9":
             r = int(input("Enter new Dimension Count: "))
-        elif choice == "11":
+        elif choice == "10":
             break
 
 def toggle_precision():
@@ -154,18 +129,17 @@ def toggle_precision():
         print("Model precision set to FP32.")
 
 def main_menu():
-    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, stop_loss_value, lora_alpha, r
+    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, lora_alpha, r
     warmup_steps = 5
-    per_device_train_batch_size = 128
-    gradient_accumulation_steps = 1
+    per_device_train_batch_size = 2
+    gradient_accumulation_steps = 4
     max_steps = 1000
     learning_rate = 2.5e-5
     logging_steps = 50
     save_steps = 50
     precision = torch.float16
-    stop_loss_value = 1.66
-    lora_alpha = 16
-    r = 8
+    lora_alpha = 1024
+    r = 512
 
     while True:
         print("\nMain Menu:")
@@ -196,3 +170,4 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
+
