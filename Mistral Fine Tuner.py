@@ -52,16 +52,21 @@ def load_data_and_model(text_file, model_directory):
     return model, tokenizer, train_dataset
 
 class CustomSFTTrainer(SFTTrainer):
+    def __init__(self, stop_loss_value, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.stop_loss_value = stop_loss_value
+
     def training_step(self, model, inputs):
         outputs = super().training_step(model, inputs)
-
         loss_value = outputs.loss if isinstance(outputs, dict) else outputs
 
-        if loss_value and loss_value.item() <= stop_loss_value:
-            print(f"Loss reached {stop_loss_value} or below. Saving and stopping training.")
+        print(f"Current Loss Value: {loss_value.item()}")  # To help diagnose the issue
+
+        if loss_value and loss_value.item() <= self.stop_loss_value:
+            print(f"Loss reached {self.stop_loss_value} or below. Saving and stopping training.")
             self.save_model()  # Save the model
             self.tokenizer.save_pretrained(self.args.output_dir)  # Save the tokenizer
-            raise ValueError(f"Training halted due to loss reaching {stop_loss_value} or below")
+            raise ValueError(f"Training halted due to loss reaching {self.stop_loss_value} or below")
         return outputs
 
 def train_model(model, tokenizer, train_dataset, output_directory):
@@ -83,6 +88,7 @@ def train_model(model, tokenizer, train_dataset, output_directory):
     )
 
     trainer = CustomSFTTrainer(
+        stop_loss_value=stop_loss_value,
         model=model,
         tokenizer=tokenizer,
         args=training_args,
@@ -144,7 +150,7 @@ def toggle_precision():
 def main_menu():
     global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, stop_loss_value
     warmup_steps = 5
-    per_device_train_batch_size = 64
+    per_device_train_batch_size = 96
     gradient_accumulation_steps = 1
     max_steps = 1000
     learning_rate = 2.5e-5
