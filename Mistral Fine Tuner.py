@@ -5,6 +5,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, Train
 from trl import SFTTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
+model = None
+
 def select_directory(title="Select a Directory"):
     folder_selected = filedialog.askdirectory(title=title)
     if not folder_selected:
@@ -18,6 +20,7 @@ def select_file(title="Select a File"):
     return file_selected
 
 def load_data_and_model(text_file, model_directory):
+    global model
     with open(text_file, 'r') as f:
         content = f.read()
     if not content:
@@ -53,9 +56,13 @@ def load_data_and_model(text_file, model_directory):
 
 def unload_model_and_clear_cuda():
     global model
-    del model
-    torch.cuda.empty_cache()
-    print("Model unloaded and CUDA memory cleared!")
+    if model:
+        del model
+        model = None
+        torch.cuda.empty_cache()
+        print("Model unloaded and CUDA memory cleared.")
+    else:
+        print("Model is not currently loaded.")
 
 class CustomSFTTrainer(SFTTrainer):
     def __init__(self, stop_loss_value, *args, **kwargs):
@@ -65,6 +72,7 @@ class CustomSFTTrainer(SFTTrainer):
     def training_step(self, model, inputs):
         outputs = super().training_step(model, inputs)
         loss_value = outputs.loss if isinstance(outputs, dict) else outputs
+
         print(f"Current Loss Value: {loss_value.item()}")
 
         if loss_value and loss_value.item() <= self.stop_loss_value:
@@ -159,6 +167,7 @@ def toggle_precision():
         print("Model precision set to FP32.")
 
 def main_menu():
+    global model
     global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, stop_loss_value, lora_alpha, r
     warmup_steps = 5
     per_device_train_batch_size = 128
@@ -187,7 +196,7 @@ def main_menu():
             if text_file and model_directory:
                 model, tokenizer, train_dataset = load_data_and_model(text_file, model_directory)
         elif choice == "2":
-            if 'model' in locals() and 'tokenizer' in locals() and 'train_dataset' in locals():
+            if model:
                 output_directory = select_directory("Select Output Directory")
                 if output_directory:
                     train_model(model, tokenizer, train_dataset, output_directory)
@@ -200,7 +209,7 @@ def main_menu():
         elif choice == "5":
             unload_model_and_clear_cuda()
         elif choice == "6":
-            break
+            exit()
 
 if __name__ == "__main__":
     main_menu()
