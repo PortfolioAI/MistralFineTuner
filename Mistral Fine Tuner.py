@@ -51,12 +51,6 @@ def load_data_and_model(text_file, model_directory):
 
     return model, tokenizer, train_dataset
 
-def unload_model_and_clear_cuda():
-    global model
-    del model
-    torch.cuda.empty_cache()
-    print("Model unloaded and CUDA memory cleared!")
-
 class CustomSFTTrainer(SFTTrainer):
     def __init__(self, stop_loss_value, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -65,6 +59,7 @@ class CustomSFTTrainer(SFTTrainer):
     def training_step(self, model, inputs):
         outputs = super().training_step(model, inputs)
         loss_value = outputs.loss if isinstance(outputs, dict) else outputs
+
         print(f"Current Loss Value: {loss_value.item()}")
 
         if loss_value and loss_value.item() <= self.stop_loss_value:
@@ -178,8 +173,7 @@ def main_menu():
         print("2. Train the model")
         print("3. Adjust Training Parameters")
         print("4. Toggle Model Precision (Current: FP16)" if precision == torch.float16 else "4. Toggle Model Precision (Current: FP32)")
-        print("5. Unload Model and Clear CUDA Memory")
-        print("6. Exit")
+        print("5. Exit")
         choice = input("Select an option: ")
         if choice == "1":
             text_file = select_file("Select a Text File")
@@ -198,8 +192,6 @@ def main_menu():
         elif choice == "4":
             toggle_precision()
         elif choice == "5":
-            unload_model_and_clear_cuda()
-        elif choice == "6":
             break
 
 if __name__ == "__main__":
