@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling, TrainerCallback, TrainerControl
 from trl import SFTTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
@@ -76,7 +76,7 @@ def train_model(model, tokenizer, train_dataset, output_directory):
         train_dataset=train_dataset,
         data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
         dataset_text_field="text",
-        max_seq_length=2048
+        max_seq_length=4096
     )
 
     trainer.train()
@@ -131,15 +131,15 @@ def toggle_precision():
 def main_menu():
     global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, lora_alpha, r
     warmup_steps = 5
-    per_device_train_batch_size = 2
-    gradient_accumulation_steps = 4
+    per_device_train_batch_size = 1
+    gradient_accumulation_steps = 128
     max_steps = 1000
-    learning_rate = 2.5e-5
-    logging_steps = 50
-    save_steps = 50
+    learning_rate = 3e-4
+    logging_steps = 1
+    save_steps = 1
     precision = torch.float16
-    lora_alpha = 1024
-    r = 512
+    lora_alpha = 32
+    r = 16
 
     while True:
         print("\nMain Menu:")
@@ -170,4 +170,3 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
-
