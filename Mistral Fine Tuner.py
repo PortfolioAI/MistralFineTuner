@@ -1,9 +1,15 @@
 import tkinter as tk
 from tkinter import filedialog
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling, TrainerCallback, TrainerControl
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling
 from trl import SFTTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+def load_tokenizer(model_directory):
+    tokenizer = AutoTokenizer.from_pretrained(model_directory)
+    tokenizer.pad_token = tokenizer.unk_token
+    tokenizer.padding_side = "right"
+    return tokenizer
 
 def select_directory(title="Select a Directory"):
     folder_selected = filedialog.askdirectory(title=title)
@@ -18,14 +24,15 @@ def select_file(title="Select a File"):
     return file_selected
 
 def load_data_and_model(text_file, model_directory):
-    with open(text_file, 'r') as f:
-        content = f.read()
-    if not content:
-        raise ValueError("Text file is empty.")
+    try:
+        with open(text_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        raise ValueError("There was a problem reading the text file. Ensure it's encoded in UTF-8.")
 
     model = AutoModelForCausalLM.from_pretrained(model_directory, torch_dtype=precision).to('cuda')
-    tokenizer = AutoTokenizer.from_pretrained(model_directory)
-    train_dataset = TextDataset(tokenizer=tokenizer, file_path=text_file, block_size=128)
+    tokenizer = load_tokenizer(model_directory)
+    train_dataset = TextDataset(tokenizer=tokenizer, file_path=text_file, block_size=256)
 
     model.gradient_checkpointing_enable()
     model = prepare_model_for_kbit_training(model)
