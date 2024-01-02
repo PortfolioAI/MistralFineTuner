@@ -1,9 +1,15 @@
 import tkinter as tk
 from tkinter import filedialog
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling
+import logging
+import shutil
+import os
+from transformers import AutoModelForCausalLM, AutoTokenizer, TextDataset, TrainingArguments, DataCollatorForLanguageModeling, AutoConfig
 from trl import SFTTrainer
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from datasets import load_dataset, DatasetDict
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_tokenizer(model_directory):
     tokenizer = AutoTokenizer.from_pretrained(model_directory)
@@ -25,40 +31,57 @@ def select_file(title="Select a File"):
 
 def load_data_and_model(text_file, model_directory):
     try:
-        with open(text_file, 'r', encoding='utf-8') as f:
-            content = f.read()
-    except UnicodeDecodeError:
-        raise ValueError("There was a problem reading the text file. Ensure it's encoded in UTF-8.")
+        logging.info("Loading model from directory: %s", model_directory)
+        model = AutoModelForCausalLM.from_pretrained(model_directory, torch_dtype=precision).to('cuda')
+        logging.info("Model loaded successfully.")
 
-    model = AutoModelForCausalLM.from_pretrained(model_directory, torch_dtype=precision).to('cuda')
-    tokenizer = load_tokenizer(model_directory)
-    train_dataset = TextDataset(tokenizer=tokenizer, file_path=text_file, block_size=256)
+        logging.info("Loading tokenizer.")
+        tokenizer = load_tokenizer(model_directory)
+        logging.info("Tokenizer loaded successfully.")
 
-    model.gradient_checkpointing_enable()
-    model = prepare_model_for_kbit_training(model)
+        logging.info("Attempting to load text file: %s", text_file)
+        dataset = load_dataset('text', data_files=text_file)
+        logging.info("Text file loaded into dataset.")
 
-    peft_config = LoraConfig(
-        r=r,
-        lora_alpha=lora_alpha,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "o_proj",
-            "gate_proj",
-            "up_proj",
-            "down_proj",
-            "lm_head",
-        ],
-        bias="none",
-        lora_dropout=0.05,
-        task_type="CAUSAL_LM",
-    )
-    model = get_peft_model(model, peft_config)
+        logging.info("Tokenizing dataset.")
+        def tokenize_function(examples):
+            return tokenizer(examples['text'], padding='max_length', truncation=True, max_length=256)
+        tokenized_dataset = dataset.map(tokenize_function, batched=True)
+        logging.info("Dataset tokenized successfully.")
 
-    return model, tokenizer, train_dataset
+        logging.info("Enabling gradient checkpointing.")
+        model.gradient_checkpointing_enable()
 
-def train_model(model, tokenizer, train_dataset, output_directory):
+        logging.info("Preparing model for k-bit training.")
+        model = prepare_model_for_kbit_training(model)
+
+        peft_config = LoraConfig(
+            r=r,
+            lora_alpha=lora_alpha,
+            target_modules=[
+                "q_proj",
+                "k_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+                "lm_head",
+            ],
+            bias="none",
+            lora_dropout=0.05,
+            task_type="CAUSAL_LM",
+        )
+        model = get_peft_model(model, peft_config)
+        logging.info("PEFT model configuration complete.")
+
+        logging.info("Model and data loaded and prepared successfully.")
+        return model, tokenizer, tokenized_dataset['train']
+
+    except Exception as e:
+        logging.error("An error occurred: %s", e)
+        raise
+def train_model(model, tokenizer, train_dataset, output_directory, model_directory):
     training_args = TrainingArguments(
         output_dir=output_directory,
         warmup_steps=warmup_steps,
@@ -75,7 +98,6 @@ def train_model(model, tokenizer, train_dataset, output_directory):
         fp16=True if precision == torch.float16 else False,
         logging_dir="./logs",
     )
-
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
@@ -85,10 +107,10 @@ def train_model(model, tokenizer, train_dataset, output_directory):
         dataset_text_field="text",
         max_seq_length=4096
     )
-
     trainer.train()
     trainer.save_model(output_directory)
     tokenizer.save_pretrained(output_directory)
+    shutil.copyfile(os.path.join(model_directory, 'config.json'), os.path.join(output_directory, 'config.json'))
 
 def adjust_training_parameters():
     global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, lora_alpha, r
@@ -137,16 +159,16 @@ def toggle_precision():
 
 def main_menu():
     global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, lora_alpha, r
-    warmup_steps = 5
+    warmup_steps = 1
     per_device_train_batch_size = 1
-    gradient_accumulation_steps = 128
+    gradient_accumulation_steps = 32
     max_steps = 1000
-    learning_rate = 3e-4
+    learning_rate = 2e-4
     logging_steps = 1
     save_steps = 1
     precision = torch.float16
-    lora_alpha = 32
-    r = 16
+    lora_alpha = 16
+    r = 8
 
     while True:
         print("\nMain Menu:")
@@ -165,7 +187,7 @@ def main_menu():
             if 'model' in locals() and 'tokenizer' in locals() and 'train_dataset' in locals():
                 output_directory = select_directory("Select Output Directory")
                 if output_directory:
-                    train_model(model, tokenizer, train_dataset, output_directory)
+                    train_model(model, tokenizer, train_dataset, output_directory, model_directory)
             else:
                 print("Load the text file and initialize the model first.")
         elif choice == "3":
