@@ -32,7 +32,8 @@ def select_file(title="Select a File"):
 def load_data_and_model(text_file, model_directory):
     try:
         logging.info("Loading model from directory: %s", model_directory)
-        model = AutoModelForCausalLM.from_pretrained(model_directory, torch_dtype=precision).to('cuda')
+
+        model = AutoModelForCausalLM.from_pretrained(model_directory, trust_remote_code=True).to('cuda')
         logging.info("Model loaded successfully.")
 
         logging.info("Loading tokenizer.")
@@ -49,25 +50,13 @@ def load_data_and_model(text_file, model_directory):
         tokenized_dataset = dataset.map(tokenize_function, batched=True)
         logging.info("Dataset tokenized successfully.")
 
-        logging.info("Enabling gradient checkpointing.")
-        model.gradient_checkpointing_enable()
-
         logging.info("Preparing model for k-bit training.")
         model = prepare_model_for_kbit_training(model)
 
         peft_config = LoraConfig(
             r=r,
             lora_alpha=lora_alpha,
-            target_modules=[
-                "q_proj",
-                "k_proj",
-                "v_proj",
-                "o_proj",
-                "gate_proj",
-                "up_proj",
-                "down_proj",
-                "lm_head",
-            ],
+            target_modules=["Wqkv"],
             bias="none",
             lora_dropout=0.05,
             task_type="CAUSAL_LM",
@@ -81,6 +70,7 @@ def load_data_and_model(text_file, model_directory):
     except Exception as e:
         logging.error("An error occurred: %s", e)
         raise
+
 def train_model(model, tokenizer, train_dataset, output_directory, model_directory):
     training_args = TrainingArguments(
         output_dir=output_directory,
@@ -95,7 +85,6 @@ def train_model(model, tokenizer, train_dataset, output_directory, model_directo
         evaluation_strategy="no",
         eval_steps=50,
         do_eval=False,
-        fp16=True if precision == torch.float16 else False,
         logging_dir="./logs",
     )
     trainer = SFTTrainer(
@@ -148,17 +137,8 @@ def adjust_training_parameters():
         elif choice == "10":
             break
 
-def toggle_precision():
-    global precision
-    if precision == torch.float32:
-        precision = torch.float16
-        print("Model precision set to FP16.")
-    else:
-        precision = torch.float32
-        print("Model precision set to FP32.")
-
 def main_menu():
-    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, precision, lora_alpha, r
+    global warmup_steps, per_device_train_batch_size, gradient_accumulation_steps, max_steps, learning_rate, logging_steps, save_steps, lora_alpha, r
     warmup_steps = 1
     per_device_train_batch_size = 1
     gradient_accumulation_steps = 32
@@ -166,7 +146,6 @@ def main_menu():
     learning_rate = 2e-4
     logging_steps = 1
     save_steps = 1
-    precision = torch.float16
     lora_alpha = 16
     r = 8
 
@@ -175,8 +154,7 @@ def main_menu():
         print("1. Load text file and initialize model")
         print("2. Train the model")
         print("3. Adjust Training Parameters")
-        print("4. Toggle Model Precision (Current: FP16)" if precision == torch.float16 else "4. Toggle Model Precision (Current: FP32)")
-        print("5. Exit")
+        print("4. Exit")
         choice = input("Select an option: ")
         if choice == "1":
             text_file = select_file("Select a Text File")
@@ -193,8 +171,6 @@ def main_menu():
         elif choice == "3":
             adjust_training_parameters()
         elif choice == "4":
-            toggle_precision()
-        elif choice == "5":
             break
 
 if __name__ == "__main__":
